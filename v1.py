@@ -65,7 +65,7 @@ class Observations(BaseModel):
 ###
 # Prompts
 ###
-with open("prompts/extract_prompt.md", "r", encoding="utf-8") as file:
+with open("extract_prompt.md", "r", encoding="utf-8") as file:
     extract_prompt = file.read()
 
 
