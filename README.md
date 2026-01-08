@@ -1,5 +1,8 @@
 # LLM Comparison Study of Brazilian EHR Data Extraction Pipelines
 
+THIS IS A TEMPORARY REPOSITORY WHILE THE PAPER WAS EVALUATED BY PROPOR 2026. 
+IF WAS ACCEPTED THE AUTHORS WILL CREATE A DEFINITIVE REPOSITORY IDENTIFYING THE AUTHOR'S AND THE INSTITUTIONS INVOLVED.
+
 A tool to extract structured medical lab results from PDF documents using AI models (OpenAI or Gemini).
 
 ## Overview
