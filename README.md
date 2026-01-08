@@ -42,7 +42,7 @@ export OPENAI_API_KEY="your-openai-api-key"
 ### Basic Command Structure
 
 ```bash
-uv run <script> --model <model_name> --pdf-path <path_to_pdf>
+uv run src/<script> --model <model_name> --pdf-path <path_to_pdf>
 ```
 
 ### Arguments
@@ -58,26 +58,26 @@ uv run <script> --model <model_name> --pdf-path <path_to_pdf>
 
 ```bash
 # With Gemini
-uv run v1.py --model gemini --pdf-path /path/to/lab_results.pdf
+uv run src/v1.py --model gemini --pdf-path /path/to/lab_results.pdf
 
 # With OpenAI
-uv run v1.py --model openai --pdf-path /path/to/lab_results.pdf
+uv run src/v1.py --model openai --pdf-path /path/to/lab_results.pdf
 
 # With custom patient data
-uv run v1.py --model gemini --pdf-path /path/to/lab_results.pdf --patient-data "Idade: 45, Sexo: Feminino, Condições de saúde: Diabetes"
+uv run src/v1.py --model gemini --pdf-path /path/to/lab_results.pdf --patient-data "Idade: 45, Sexo: Feminino, Condições de saúde: Diabetes"
 ```
 
 #### Using v6.py (Segmented Extraction)
 
 ```bash
 # With Gemini
-uv run v6.py --model gemini --pdf-path /path/to/lab_results.pdf
+uv run src/v6.py --model gemini --pdf-path /path/to/lab_results.pdf
 
 # With OpenAI
-uv run v6.py --model openai --pdf-path /path/to/lab_results.pdf
+uv run src/v6.py --model openai --pdf-path /path/to/lab_results.pdf
 
 # With custom patient data
-uv run v6.py --model gemini --pdf-path /path/to/lab_results.pdf --patient-data "Idade: 45, Sexo: Feminino, Condições de saúde: Diabetes"
+uv run src/v6.py --model gemini --pdf-path /path/to/lab_results.pdf --patient-data "Idade: 45, Sexo: Feminino, Condições de saúde: Diabetes"
 ```
 
 ## Output

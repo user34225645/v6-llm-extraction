@@ -11,14 +11,14 @@ from google.genai import types
 from openai import AsyncOpenAI
 from pydantic import BaseModel, Field
 
-
+###
 # Set logging level to INFO
 logging.basicConfig(level=logging.INFO)
-
 
 ###
 # FHIR simplified structure
 ###
+
 interpretation_choices = Literal["normal", "high", "low", "not_present", "not_interpreted"]
 
 
@@ -62,16 +62,26 @@ class Observations(BaseModel):
     observations: List[Observation] = Field(description="Lista de observations")
 
 
-###
+class Section(BaseModel):
+    start_page: int = Field(description="Página de início da section")
+    end_page: int = Field(description="Página de término da section")
+
+
+class Sections(BaseModel):
+    sections: List[Section] = Field(description="Lista de sections")
+
+
 # Prompts
-###
-with open("extract_prompt.md", "r", encoding="utf-8") as file:
+SCRIPT_DIR = Path(__file__).parent
+
+with open(SCRIPT_DIR / "prompts/extract_prompt.md", "r", encoding="utf-8") as file:
     extract_prompt = file.read()
 
+with open(SCRIPT_DIR / "prompts/segmentation_prompt.md", "r", encoding="utf-8") as file:
+    segmentation_prompt = file.read()
 
-###
+
 # Utilities
-###
 def get_pdf_text(doc: fitz.Document) -> list[str]:
     text = []
     for index, page in enumerate(doc):
@@ -83,7 +93,43 @@ def get_pdf_text(doc: fitz.Document) -> list[str]:
 ###
 # Gemini helpers
 ###
-async def extract_full(
+async def segment_pdf(doc_pdf: bytes, client: genai.Client, model: str = "gemini-flash-lite-latest") -> Sections:
+    max_attempts = 3
+
+    for attempt in range(1, max_attempts + 1):
+        try:
+            temperature = min(1.5, (attempt - 1) * 0.375)
+            logging.info(f"Attempt {attempt} of {max_attempts} with temperature {temperature}")
+
+            response = await client.aio.models.generate_content(
+                model=model,
+                contents=[
+                    types.Part.from_bytes(data=doc_pdf, mime_type="application/pdf"),
+                    segmentation_prompt,
+                ],
+                config={
+                    "response_mime_type": "application/json",
+                    "response_schema": Sections,
+                    "temperature": temperature,
+                    "thinking_config": types.ThinkingConfig(thinking_budget=4096),
+                },
+            )
+
+            if response.parsed is None:
+                logging.info(response.text)
+                raise Exception("Can't parse the response, check the logs for more information")
+            return response.parsed
+
+        except Exception as e:
+            if attempt == max_attempts:
+                logging.error(f"Attempt {attempt} of {max_attempts} failed. No more retries.")
+            else:
+                logging.error(f"Attempt {attempt} of {max_attempts} failed: {e}. Retrying...")
+
+###
+# Gemini helpers
+###
+async def extract_full_gemini(
     doc_text: list[str], patient_data_text: str, client: genai.Client, model: str = "gemini-2.5-flash"
 ) -> Observations:
     max_attempts = 3
@@ -95,8 +141,6 @@ async def extract_full(
         try:
             # The temperature is a function of the attempt number, it starts at 0.0 and increases by 0.375 for each attempt for consistency
             temperature = min(1.5, (attempt - 1) * 0.375)
-
-
             logging.info(f"Attempt {attempt} of {max_attempts} with temperature {temperature}")
 
             response = await client.aio.models.generate_content(
@@ -129,6 +173,7 @@ async def extract_full(
                 logging.error(f"Attempt {attempt} of {max_attempts} failed: {e}. Retrying in {cooldown} seconds...")
                 await asyncio.sleep(cooldown)
 
+
 ###
 # OpenAI helpers
 ###
@@ -145,20 +190,42 @@ async def extract_full_openai(
     return response.output_parsed
 
 
-###
-# Pipeline
-###
 async def extract_pipeline(
     doc_path: str, patient_data_text: str, client: genai.Client | AsyncOpenAI, output_dir: Optional[str] = None
 ) -> Observations:
-    """Pipeline that processes a complete PDF."""
-    doc = fitz.open(doc_path)
+    with open(doc_path, "rb") as file:
+        doc_bytes = file.read()
+
+    doc = fitz.open(stream=doc_bytes, filetype="pdf")
     doc_text = get_pdf_text(doc)
 
     if isinstance(client, genai.Client):
-        observations = await extract_full(doc_text, patient_data_text, client)
+        segments = await segment_pdf(doc_bytes, client)
     else:
-        observations = await extract_full_openai(doc_text, patient_data_text, client)
+        gemini_client = genai.Client()
+        segments = await segment_pdf(doc_bytes, gemini_client)
+
+    # Create tasks to extract each segment in parallel
+    tasks = []
+    for section in segments.sections:
+        # Extract the text of the pages of the segment (0-based indices)
+        section_text = doc_text[section.start_page - 1 : section.end_page]
+        if isinstance(client, genai.Client):
+            task = extract_full_gemini(section_text, patient_data_text, client)
+        else:
+            task = extract_full_openai(section_text, patient_data_text, client)
+        tasks.append(task)
+
+    # Execute all extractions in parallel
+    results = await asyncio.gather(*tasks)
+
+    # Combine all observations into a single list
+    all_observations = []
+    for result in results:
+        if result and result.observations:
+            all_observations.extend(result.observations)
+
+    end_result = Observations(observations=all_observations)
 
     # Define the output directory
     if output_dir is None:
@@ -174,15 +241,15 @@ async def extract_pipeline(
 
     # Save as json
     with open(save_path, "w", encoding="utf-8") as file:
-        file.write(observations.model_dump_json(indent=4, ensure_ascii=False))
+        file.write(end_result.model_dump_json(indent=4, ensure_ascii=False))
 
     logging.info(f"Saved results to: {save_path}")
-    return observations
+    return end_result
 
 
 async def main():
     """Main function to process a single PDF based on CLI arguments."""
-    parser = argparse.ArgumentParser(description="Process PDF lab results and extract observations")
+    parser = argparse.ArgumentParser(description="Process PDF lab results and extract observations (v6 with segmentation)")
     parser.add_argument("--model", type=str, required=True, choices=["openai", "gemini"],
                         help="Model to use for extraction (openai or gemini)")
     parser.add_argument("--pdf-path", type=str, required=True,
